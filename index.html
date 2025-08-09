@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>Caishen Big Red Packet</title>
+
+<!-- Firebase SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #0b0b12;
+    font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    height: 100vh;
+    display: flex; justify-content: center; align-items: center;
+  }
+  /* Play Notice */
+  #noticeOverlay {
+    position: fixed; inset: 0; z-index: 10000;
+    background: rgba(0,0,0,.88); color:#fff;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding: 24px;
+  }
+  #noticeBox { background:#4b1c9c; max-width: 560px; width: min(92vw,560px); padding: 28px 24px; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  #noticeBox h2 { margin: 0 0 10px; }
+  #noticeBox p { margin: 6px 0; }
+  #noticeBox .small { opacity:.9; font-size:.92em; }
+  #noticeBox button { margin-top: 14px; padding: 10px 18px; border:0; border-radius:10px; background:#d32f2f; color:#fff; font-weight:600; cursor:pointer; }
+  #startBtn[disabled] { opacity:.6; cursor:not-allowed; }
+
+  #companyLogo { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(1); max-width: 100vw; max-height: 100vh; opacity: .85; pointer-events: none; z-index: 1; }
+
+  #caishen { position: absolute; top: 10%; left: 0; width: 240px; height: 300px; background: center/contain no-repeat; animation: moveLeftRight 6s ease-in-out infinite alternate; z-index: 10; }
+  @keyframes moveLeftRight { from { transform: translateX(0); } to { transform: translateX(calc(100vw - 120px)); } }
+
+  #bottomBanner { position: fixed; bottom: 0; left: 0; width: 100%; height: 150px; background: center/cover no-repeat; z-index: 15; pointer-events:none; }
+
+  #bigRedPacket { position: relative; width: 200px; height: 260px; background: center/contain no-repeat; cursor: pointer; animation: pulse 2s infinite; z-index: 20; }
+  #bigRedPacket.disabled { filter: grayscale(1) opacity(.6); pointer-events:none; }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
+  #bigRedPacket.opening { animation: openPop 700ms ease-out forwards; }
+  @keyframes openPop { 0%{transform:scale(1) rotate(0)} 40%{transform:scale(1.15) rotate(-4deg)} 65%{transform:scale(.98) rotate(2deg)} 100%{transform:scale(1) rotate(0)} }
+
+  .coin { position: fixed; width: 28px; height: 28px; left: var(--x,50%); top: var(--y,50%); transform: translate(-50%,-50%) rotate(var(--r,0deg)); opacity:0; pointer-events:none; will-change: transform, opacity; z-index: 2000; background: var(--img, url('https://i.postimg.cc/3RdRN4mb/Screenshot-2025-08-10-010039-1.png')) center/contain no-repeat; animation: coin-burst 900ms ease-out forwards; }
+  @keyframes coin-burst { 0%{opacity:1;transform:translate(-50%,-50%) scale(.6) rotate(var(--r))} 100%{opacity:0;transform:translate(calc(-50% + var(--dx,0px)),calc(-50% + var(--dy,0px))) scale(1.1) rotate(calc(var(--r) + 360deg))} }
+
+  #rewardPopup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(20,0,40,.95); padding: 20px 30px 50px; border-radius: 12px; display: none; font-size: 1.5em; z-index: 9999; text-align: center; color: #fff; }
+  .gold-text { background: linear-gradient(45deg, #FFD700, #FFA500, #FFD700); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  #captchaCode { display: none; margin-top: 12px; font-size: 1.2em; letter-spacing: .15em; background: #300040; padding: 6px 12px; border-radius: 6px; font-weight: bold; color: #FFD700; }
+  .copy-btn { margin-top: 12px; padding: 10px 20px; background: #28a745; color:#fff; border:0; border-radius:6px; cursor:pointer; font-size:1em; }
+
+  /* Hidden Test Unlock Button (dev-only) */
+  #devUnlockBtn{display:none;position:fixed;right:16px;bottom:16px;z-index:10001;padding:10px 14px;border:none;border-radius:999px;background:#111;color:#fff;font-weight:700;box-shadow:0 6px 18px rgba(0,0,0,.25);opacity:.92}
+  #devUnlockBtn:active{transform:scale(.96)}
+</style>
+</head>
+<body>
+  <div id="noticeOverlay">
+    <div id="noticeBox">
+      <h2>🧧 Play Guidelines</h2>
+      <p>Random Angpao every <strong id="openDayName">Wednesday</strong> from <strong>SGD $3.88</strong> to <strong>SGD $88.88</strong>.</p>
+      <p class="small">Available once per user.</p>
+      <p id="unlockMsg" class="small" style="margin-top:8px"></p>
+      <button id="startBtn" disabled>Start</button>
+    </div>
+  </div>
+
+  <img id="companyLogo" alt="Company Logo"/>
+  <div id="caishen" aria-hidden="true"></div>
+  <div id="bigRedPacket" class="disabled" onclick="openRedPacket()" aria-label="Open lucky packet"></div>
+
+  <div id="rewardPopup" role="dialog" aria-modal="true" aria-labelledby="rewardNumber">
+    🎉 You got SGD <span class="gold-text">$</span> <span id="rewardNumber" class="gold-text">0.00</span> Bonus!<br/>
+    <div id="captchaCode" aria-live="polite"></div>
+    <p style="color: #ff4444; font-weight: bold;">🚨 Please Screenshot and send to admin.</p>
+    <button class="copy-btn" onclick="copyCode()">Copy Verification Code</button>
+  </div>
+
+  <div id="bottomBanner" aria-hidden="true"></div>
+
+  <audio id="bgMusic" src="https://github.com/Elynnn-wc/my-music/raw/refs/heads/main/Agent%20Mix%20-%20Qingyi.mp3" preload="none" loop></audio>
+  <audio id="openSound" src="https://github.com/Elynnn-wc/my-music/raw/refs/heads/main/cha-ching-7053.mp3" preload="auto"></audio>
+
+  <!-- Hidden dev unlock button -->
+  <button id="devUnlockBtn" type="button" aria-hidden="true" title="Developer Test">Test</button>
+
+<script>
+  /* ===== Firebase init ===== */
+  try {
+    const firebaseConfig = {
+      apiKey: "AIzaSyBl0CeDXK9NN_KA4U8zs2A6MpxcX-lSyps",
+      authDomain: "caishenrain.firebaseapp.com",
+      projectId: "caishenrain",
+      storageBucket: "caishenrain.firebasestorage.app",
+      messagingSenderId: "474637588644",
+      appId: "1:474637588644:web:41875e52b1bf934abb2e31",
+      measurementId: "G-FP1ER2SM70"
+    };
+    if (!window.firebaseAppsInitialized) {
+      firebase.initializeApp(firebaseConfig);
+      window.db = firebase.firestore();
+      db.settings({ experimentalForceLongPolling: true, useFetchStreams: false });
+      window.firebaseAppsInitialized = true;
+    }
+  } catch (err) { console.warn('Firebase init skipped:', err); }
+
+  /* ===== 识别公司/页面（page 仅影响抽奖；样式按公司统一） ===== */
+  const WORKER_URL = "https://caishen-draw.elynnn598.workers.dev";
+  const q = new URLSearchParams(location.search);
+
+  function detectContext() {
+    const h = location.hostname.toLowerCase();
+    let companyId = (q.get("c") || q.get("company") || "").toUpperCase();
+    let pageId    = q.get("p") || q.get("page") || "";
+
+    if (!companyId) {
+      if (h.startsWith("ryb-")) companyId = "RYB";
+      else if (h.startsWith("sgb-")) companyId = "SGB";
+      else companyId = "LB7";
+    }
+    if (!pageId) {
+      if (/(goldwin|silvermoon|forest)/.test(h)) pageId = "page2";
+      else if (/(luckyjade|starfire|mountain)/.test(h)) pageId = "page3";
+      else pageId = "page1";
+    }
+    return { companyId, pageId };
+  }
+  const { companyId, pageId } = detectContext();
+  let gameStarted = false;
+
+  /* ===== 公司主题（支持可调 logoStyle / bannerStyle） ===== */
+  const COMPANY_THEME = {
+    LB7: {
+      bg: "https://img.freepik.com/free-vector/watercolor-sugar-cotton-clouds-background_79603-2380.jpg",
+      logoOverlay: "https://img.capalangresource.com/images/public/cpwl/banner/WLLB7/GENERAL/banner_20250426050341681.webp",
+      logoStyle: { maxWidth: "90vw", maxHeight: "90vh", opacity: "0.85", top: "50%", left: "50%", transform: "translate(-50%, -50%) scale(1)" },
+
+      caishenSprite: "https://i.postimg.cc/qBDyW26y/00243643-2.png",
+      bottomBanner: "https://img.capalangresource.com/images/public/cpwl/slideshow/WLLB7/GENERAL/slideshow_20250426022829742.gif",
+      bannerStyle: { height: "150px", backgroundSize: "cover", backgroundPosition: "center" },
+
+      packetImg: "https://i.postimg.cc/kXdsTx0s/f-IXA1-MLNWD.png",
+      coinImg: "https://i.postimg.cc/3RdRN4mb/Screenshot-2025-08-10-010039-1.png",
+      colors: { bg: "#0b0b12", primary: "#F5C84B", accent: "#8128FF" },
+    },
+    RYB: {
+      bg: "https://img.freepik.com/free-photo/light-background_24972-1415.jpg?semt=ais_hybrid&w=740&q=80",
+      logoOverlay: "https://i.postimg.cc/wMnJztTD/RYB-4-1.png",
+      logoStyle: { width: "60vw", maxWidth: "520px", top: "42%", left: "50%", transform: "translate(-50%, -50%)", opacity: "0.9" },
+
+      caishenSprite: "https://i.pinimg.com/1200x/dd/7b/7e/dd7b7ef127978bc50fed7c3faa61b3ff.jpg", /* 暂共用 LB7 */
+      bottomBanner: "https://i.postimg.cc/NfPCybLx/RYB-3-1.png",
+      bannerStyle: { height: "110px", backgroundSize: "cover", backgroundPosition: "center" },
+
+      packetImg: "https://i.postimg.cc/kXdsTx0s/f-IXA1-MLNWD.png",  /* 暂共用 LB7 */
+      coinImg: "https://i.postimg.cc/3RdRN4mb/Screenshot-2025-08-10-010039-1.png", /* 暂共用 LB7 */
+      colors: { bg: "#0A0E18", primary: "#ff7d4d", accent: "#f11010" }
+    },
+    SGB: {
+      bg:"https://images.rawpixel.com/image_800/cHJpdmF0ZS9sci9pbWFnZXMvd2Vic2l0ZS8yMDIzLTEyL21vdGFybzdfYWJzdHJhY3RfZ29sZF9iYWNrZ3JvdW5kX3dpdGhfdGhpbl9saW5lc19vbl93aGl0ZV9iYWNrZ19hMTAyOTg1OC00NjNiLTRiY2MtOGZhMy00YTgyNGZiOGEwZDdfMS5qcGc.jpg", 
+      logoOverlay:"https://singabet.net/images/singabet/logo2.png", 
+      logoStyle:{ width: "60vw", maxWidth: "520px", top: "42%", left: "50%", transform: "translate(-50%, -50%)", opacity: "0.9" },
+      caishenSprite:"https://png.pngtree.com/png-clipart/20250103/original/pngtree-caishen-chinese-new-chinese-god-of-wealth-png-image_18652161.png",
+      bottomBanner:"https://singabet.net/images/singabet/promotion/promo3.jpg", 
+      bannerStyle:{ height: "110px", backgroundSize: "cover", backgroundPosition: "center" },
+      packetImg: "https://i.postimg.cc/kXdsTx0s/f-IXA1-MLNWD.png",  /* 暂共用 LB7 */
+      coinImg: "https://i.postimg.cc/3RdRN4mb/Screenshot-2025-08-10-010039-1.png", /* 暂共用 LB7 */
+      colors:{ bg:"#081012", primary:"#26DB9A", accent:"#FFD166" }
+    }
+  };
+
+  /* ===== 应用主题（按公司统一皮肤 + 可调样式） ===== */
+  let COIN_IMG = "";
+  function applyTheme() {
+    const theme = COMPANY_THEME[companyId] || COMPANY_THEME.LB7;
+
+    // 背景
+    if (theme.bg) document.body.style.background = `url('${theme.bg}') center/cover no-repeat`;
+
+    // 叠加 logo + 自定义样式
+    const elLogo = document.getElementById("companyLogo");
+    if (elLogo && theme.logoOverlay) {
+      elLogo.src = theme.logoOverlay;
+      if (theme.logoStyle) Object.assign(elLogo.style, theme.logoStyle);
+    }
+
+    // 财神
+    const elCai = document.getElementById("caishen");
+    if (elCai && theme.caishenSprite) elCai.style.backgroundImage = `url('${theme.caishenSprite}')`;
+
+    // 底部 banner + 自定义样式
+    const elBottom = document.getElementById("bottomBanner");
+    if (elBottom && theme.bottomBanner) {
+      elBottom.style.backgroundImage = `url('${theme.bottomBanner}')`;
+      if (theme.bannerStyle) Object.assign(elBottom.style, theme.bannerStyle);
+    }
+
+    // 红包图
+    const elPacket = document.getElementById("bigRedPacket");
+    if (elPacket && theme.packetImg) elPacket.style.backgroundImage = `url('${theme.packetImg}')`;
+
+    // 金币粒子
+    COIN_IMG = theme.coinImg || COIN_IMG;
+
+    // 主题色（如需用到）
+    document.documentElement.style.setProperty("--bg", theme.colors.bg);
+    document.documentElement.style.setProperty("--primary", theme.colors.primary);
+    document.documentElement.style.setProperty("--accent", theme.colors.accent);
+
+    // 内部角标（?staff=8899）
+    if (q.get("staff")==="8899") {
+      const tag = document.createElement("div");
+      tag.textContent = `${companyId} · ${pageId}`;
+      Object.assign(tag.style,{
+        position:"fixed",right:"8px",bottom:"8px",padding:"6px 10px",
+        background:"rgba(0,0,0,.6)",color:"#fff",borderRadius:"8px",fontSize:"12px",zIndex:9999
+      });
+      document.body.appendChild(tag);
+    }
+  }
+  document.addEventListener("DOMContentLoaded", applyTheme);
+
+  /* ===== Shift+R: 清空并设置测试模式强制解锁 ===== */
+  document.addEventListener("keydown", function(e) {
+    if (e.shiftKey && e.key.toLowerCase() === "r") {
+      try { sessionStorage.setItem('forceUnlock', '1'); } catch {}
+      localStorage.clear();
+      location.reload();
+    }
+  });
+
+  /* ===== Company-specific open weekdays =====
+     0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
+     LB7=Wed(3), SGB=Tue(2), RYB=Fri(5)
+  */
+  const COMPANY_OPEN_DAY = { LB7: 3, SGB: 2, RYB: 5 };
+  const WEEKDAY_NAME = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+  function getKLDate(){
+    return new Date(new Date().toLocaleString('en-US',{ timeZone:'Asia/Kuala_Lumpur' }));
+  }
+  function isCompanyOpenToday(companyId){
+    const target = COMPANY_OPEN_DAY[companyId] ?? 3;
+    return getKLDate().getDay() === target;
+  }
+  function nextCompanyOpenZero(companyId){
+    const target = COMPANY_OPEN_DAY[companyId] ?? 3;
+    const now = getKLDate();
+    const add = ((target - now.getDay()) + 7) % 7 || 7; // same day -> next week
+    const d = new Date(now);
+    d.setDate(now.getDate() + add);
+    d.setHours(0,0,0,0);
+    return d;
+  }
+  function formatCountdown(ms){
+    const s = Math.max(0, Math.floor(ms/1000));
+    const d = Math.floor(s/86400), h = Math.floor((s%86400)/3600), m = Math.floor((s%3600)/60), sec = s%60;
+    const parts = [];
+    if(d) parts.push(d+"d"); if(h||parts.length) parts.push(h+"h"); if(m||parts.length) parts.push(m+"m"); parts.push(sec+"s");
+    return parts.join(" ");
+  }
+
+  /* ===== Notice gating (per company) ===== */
+  function setupNotice(){
+    const overlay = document.getElementById('noticeOverlay');
+    const msg = document.getElementById('unlockMsg');
+    const btn = document.getElementById('startBtn');
+    const packet = document.getElementById('bigRedPacket');
+    const dayEl = document.getElementById('openDayName');
+
+    const forced = sessionStorage.getItem('forceUnlock') === '1';
+    const openDayNum = COMPANY_OPEN_DAY[companyId] ?? 3;
+    const openDayName = WEEKDAY_NAME[openDayNum];
+
+    // 更新顶部文案里的星期名
+    if (dayEl) dayEl.textContent = openDayName;
+
+    if (isCompanyOpenToday(companyId) || forced) {
+      msg.textContent = forced
+        ? 'Test mode — unlocked via Shift+R'
+        : `It's ${openDayName} — tap Start to play!`;
+      btn.disabled = false;
+      btn.onclick = ()=>{
+        gameStarted = true;
+        overlay.style.display = 'none';
+        packet.classList.remove('disabled');
+        const bg = document.getElementById('bgMusic');
+        if(bg){ bg.volume = 0.5; bg.play().catch(()=>{}); }
+        try { sessionStorage.removeItem('forceUnlock'); } catch {}
+      };
+    } else {
+      btn.disabled = true;
+      const target = nextCompanyOpenZero(companyId);
+      const tick = ()=>{
+        const now = getKLDate();
+        const ms = target - now;
+        msg.textContent = `Unlocks on ${openDayName}. Next open in: ` + formatCountdown(ms);
+      };
+      tick();
+      setInterval(tick, 1000);
+    }
+  }
+
+  /* ===== Number animation ===== */
+  function animateNumber(el, target, duration = 1600, onDone){
+    target = Number(target) || 0;
+    const fmt = new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    let from = parseFloat((el.textContent||'').replace(/[^0-9.\-]/g,'')); if (isNaN(from)) from = 0;
+    const start = performance.now();
+    const tick = (now)=>{
+      const p = Math.min((now-start)/duration, 1);
+      const e = 1 - Math.pow(1 - p, 3);
+      const val = from + (target - from)*e;
+      el.textContent = fmt.format(val);
+      if (p < 1) requestAnimationFrame(tick); else { el.textContent = fmt.format(target); onDone && onDone(); }
+    };
+    requestAnimationFrame(tick);
+  }
+
+  /* ===== 音乐淡出并停止 ===== */
+  function fadeOutAndStopAudio(audio, durationMs = 1200) {
+    if (!audio) return;
+    const startVol = audio.volume ?? 1;
+    const start = performance.now();
+    function step(t) {
+      const p = Math.min((t - start) / durationMs, 1);
+      const v = startVol * (1 - p);
+      audio.volume = Math.max(0, v);
+      if (p < 1) requestAnimationFrame(step);
+      else { audio.pause(); audio.currentTime = 0; audio.volume = startVol; }
+    }
+    requestAnimationFrame(step);
+  }
+
+  /* ===== Open packet ===== */
+  async function openRedPacket(){
+    if (!gameStarted) return;
+    const big = document.getElementById('bigRedPacket');
+    if (!big || big.dataset.lock === '1') return;
+    if (localStorage.getItem('hasClaimedReward')) { alert('Reward already claimed.'); return; }
+
+    big.dataset.lock = '1';
+    big.classList.add('opening');
+
+    const openSnd = document.getElementById('openSound');
+    if(openSnd){ openSnd.currentTime = 0; openSnd.play().catch(()=>{}); }
+
+    const rect = big.getBoundingClientRect();
+    createConfetti(rect.left + rect.width/2, rect.top + rect.height*0.35);
+
+    let reward, captchaCode;
+    try {
+      const resp = await fetch(`${WORKER_URL}/draw`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, pageId })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Service error');
+      reward = data.amount; captchaCode = data.code;
+    } catch (e) {
+      big.dataset.lock = '0';
+      big.classList.remove('opening');
+      alert('Service busy, try again.');
+      return;
+    }
+
+    // 背景音乐：开奖后淡出停止
+    const bg = document.getElementById('bgMusic');
+    fadeOutAndStopAudio(bg, 1200);
+
+    // === Log to Firestore ===
+    try {
+      if (window.db && captchaCode) {
+        await db.collection("companies").doc(companyId)
+          .collection("pages").doc(pageId)
+          .collection("rewards").doc(captchaCode)
+          .set({
+            companyId,
+            pageId,
+            rewardAmount: reward,
+            captchaCode,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            ua: navigator.userAgent || ''
+          });
+      }
+    } catch (logErr) {
+      console.warn("Firestore log failed:", logErr);
+    }
+
+    const popup = document.getElementById('rewardPopup');
+    const numberEl = document.getElementById('rewardNumber');
+    const captchaEl = document.getElementById('captchaCode');
+    popup.style.display = 'block';
+    captchaEl.style.display = 'none';
+    animateNumber(numberEl, Number(reward), 1600, ()=>{
+      captchaEl.textContent = `Verification Code: ${captchaCode}`;
+      captchaEl.dataset.code = captchaCode;
+      captchaEl.style.display = 'block';
+    });
+    localStorage.setItem('hasClaimedReward', '1');
+    big.style.pointerEvents = 'none';
+  }
+
+  /* ===== Coin particles ===== */
+  function createConfetti(cx, cy){
+    const pieces = 16;
+    for (let i=0;i<pieces;i++){
+      const el = document.createElement('div');
+      el.className = 'coin';
+      const angle = (Math.PI*2) * (i/pieces) + (Math.random()*0.8-0.4);
+      const distance = 100 + Math.random()*90;
+      const dx = Math.cos(angle)*distance;
+      const dy = Math.sin(angle)*distance;
+      const r = Math.floor(Math.random()*360) + 'deg';
+      el.style.setProperty('--img', `url(${COIN_IMG})`);
+      el.style.setProperty('--x', cx + 'px');
+      el.style.setProperty('--y', cy + 'px');
+      el.style.setProperty('--dx', dx + 'px');
+      el.style.setProperty('--dy', dy + 'px');
+      el.style.setProperty('--r', r);
+      document.body.appendChild(el);
+      el.addEventListener('animationend', ()=> el.remove());
+    }
+  }
+
+  /* ===== Copy code ===== */
+  function copyCode(){
+    const el = document.getElementById('captchaCode');
+    const code = el?.dataset?.code;
+    if (!code) return;
+    if (navigator.clipboard && window.isSecureContext){
+      navigator.clipboard.writeText(code).then(()=> alert('Verification code copied'));
+    }
+  }
+
+  /* ===== Hidden dev unlock (gesture + PIN) ===== */
+  (function(){
+    const btn = document.getElementById('devUnlockBtn');
+    if(!btn) return;
+
+    const isLocal = ['localhost','127.0.0.1','::1'].includes(location.hostname);
+    const DEV_PIN = '741852'; // 🔐 改成你自己的 6 位 PIN
+
+    function reveal(){ btn.style.display='block'; btn.setAttribute('aria-hidden','false'); }
+    if (isLocal) reveal();
+
+    // 7 taps within 1.5s on overlay / packet / caishen / document (capture) → prompt PIN
+    let taps = 0, firstTapAt = 0;
+    const tryTap = ()=>{
+      const now = performance.now();
+      if (now - firstTapAt > 1500) { taps = 0; firstTapAt = now; }
+      if (taps === 0) firstTapAt = now;
+      taps++;
+      if (taps >= 7) {
+        taps = 0;
+        const input = prompt('Developer PIN');
+        if (input && input === DEV_PIN) reveal();
+      }
+    };
+    ['noticeOverlay','bigRedPacket','caishen'].forEach(id=>{
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('click', tryTap, true);
+    });
+    document.addEventListener('click', tryTap, true);
+
+    btn.addEventListener('click', ()=>{
+      try { sessionStorage.setItem('forceUnlock','1'); } catch {}
+      localStorage.clear();
+      location.reload();
+    });
+  })();
+
+  // 初始化
+  document.addEventListener('DOMContentLoaded', ()=>{
+    applyTheme();
+    setupNotice();
+  });
+</script>
+</body>
+</html>
